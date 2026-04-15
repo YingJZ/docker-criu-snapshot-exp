@@ -1,13 +1,55 @@
-# Docker + CRIU 容器内进程快照与恢复实验
+# Docker + CRIU 容器快照与恢复实验（宿主机端方案）
 
-验证在 Docker 容器中使用 CRIU 对运行中进程进行 checkpoint（冻结）与 restore（恢复），确认进程状态（内存中的变量）能够在恢复后精确延续。
+在宿主机上使用 CRIU 对 Docker 容器执行 checkpoint（冻结）与 restore（恢复），验证容器内进程状态（内存中的变量）能够在恢复后精确延续。
+
+> **方案说明**：CRIU 安装在**宿主机**上，通过 Docker 原生的 `docker checkpoint` 命令从外部对整个容器做快照，无需在容器内安装 CRIU，也无需 `--privileged` 特权模式。
 
 ## 文件说明
 
 | 文件 | 用途 |
 |------|------|
 | `test_app.py` | 带状态计数器脚本，每秒向 `output.log` 写入递增数字 |
-| `Dockerfile` | 基于 Ubuntu 22.04，安装 CRIU 和 Python3 |
+| `Dockerfile` | 基于 Ubuntu 22.04，仅安装 Python3（CRIU 在宿主机上运行） |
+
+## 前置条件
+
+### 1. 宿主机安装 CRIU
+
+```bash
+# Ubuntu / Debian
+sudo apt-get update && sudo apt-get install -y criu
+
+# CentOS / RHEL
+sudo yum install -y criu
+
+# 验证安装
+criu --version
+```
+
+> 建议使用 CRIU 3.17+，内核建议 5.10+。
+
+### 2. 启用 Docker 实验特性
+
+CRIU 集成目前仍为 Docker 实验性功能，需显式启用：
+
+```bash
+# 创建或编辑 /etc/docker/daemon.json
+sudo tee /etc/docker/daemon.json <<EOF
+{
+  "experimental": true
+}
+EOF
+
+# 重启 Docker
+sudo systemctl restart docker
+```
+
+验证实验特性已启用：
+
+```bash
+docker version -f '{{.Server.Experimental}}'
+# 应输出 true
+```
 
 ## 运行步骤
 
@@ -17,69 +59,106 @@
 docker build -t criu-test .
 ```
 
-### 2. 启动容器（特权模式）
-
-CRIU 需要操作 `/proc`、ptrace 等内核接口，Docker 默认安全策略会阻止这些操作，因此必须使用特权模式启动：
+### 2. 启动容器（后台模式）
 
 ```bash
-docker run -it --rm \
-  --name criu_demo \
-  --privileged \
+docker run -d --name criu_demo \
   --security-opt seccomp=unconfined \
   criu-test
 ```
 
-此时已进入容器内部的 bash 终端，后续命令均在容器内执行。
+> - **`-d`**：后台运行，CRIU 不支持对带有 TTY（`-it`）的容器做快照。
+> - **`--security-opt seccomp=unconfined`**：放宽 seccomp 限制，允许 CRIU 所需的 ptrace 等系统调用。无需 `--privileged`。
 
-### 3. 准备快照目录
-
-```bash
-mkdir -p /app/img
-```
-
-### 4. 运行测试脚本
+### 3. 观察容器运行状态
 
 ```bash
-python3 test_app.py &
+# 查看实时日志输出
+docker logs -f criu_demo
 ```
 
-终端会打印进程 PID 和递增计数，记下第一行输出的 PID（如 `123`）。
+等待几秒，观察计数递增，然后 Ctrl+C 退出日志跟踪。
 
-### 5. 执行快照冻结（Dump）
-
-将 `123` 替换为实际的 PID：
+### 4. 创建快照（Checkpoint）
 
 ```bash
-criu dump -t 123 --images-dir /app/img --shell-job
+docker checkpoint create --leave-running criu_demo cp1
 ```
 
-成功后无报错，Python 进程已终止，计数停止。`--shell-job` 告知 CRIU 此进程由 shell 启动，不需要恢复整个会话。
+> - `--leave-running`：创建快照后**不停止**容器（可省略，省略则容器会被暂停）。
+> - `cp1`：快照名称，可自定义。
 
-### 6. 验证快照文件
+也可以在不停止容器的情况下先确认快照已保存：
 
 ```bash
-ls -l /app/img
+docker checkpoint ls criu_demo
 ```
 
-目录下会生成大量进程内存与状态的镜像文件。
-
-### 7. 恢复进程（Restore）
+### 5. 停止容器并从快照恢复
 
 ```bash
-criu restore --images-dir /app/img --shell-job &
+# 停止容器
+docker stop criu_demo
+
+# 从快照恢复
+docker start --checkpoint cp1 criu_demo
 ```
 
-### 8. 验证结果
+### 6. 验证结果
 
 ```bash
-tail -f output.log
+docker logs -f criu_demo
 ```
 
-**成功标准**：恢复后日志中的数字从 Dump 时中断的值继续递增，而非从 `0` 重新开始。
+**成功标准**：恢复后日志中的数字从 Checkpoint 时中断的值继续递增，而非从 `0` 重新开始。
+
+也可以进入容器查看 `output.log`：
+
+```bash
+docker exec criu_demo cat /app/output.log
+```
+
+## 其他操作
+
+### 仅冻结不保留运行（默认行为）
+
+```bash
+docker checkpoint create criu_demo cp1
+# 容器自动停止，等价于先 checkpoint 再 stop
+```
+
+恢复方式同上：`docker start --checkpoint cp1 criu_demo`
+
+### 指定快照存储目录
+
+```bash
+# 创建快照到自定义目录
+docker checkpoint create --checkpoint-dir /tmp/checkpoints criu_demo cp1
+
+# 从自定义目录恢复
+docker start --checkpoint-dir /tmp/checkpoints --checkpoint cp1 criu_demo
+```
+
+### 删除快照
+
+```bash
+docker checkpoint rm criu_demo cp1
+```
 
 ## 关键参数说明
 
-- `--privileged`：授予容器全部内核权限，CRIU 必需
-- `--security-opt seccomp=unconfined`：禁用 Seccomp 限制，允许 ptrace 等系统调用
-- `--shell-job`：标识进程由 shell 管理，避免 CRIU 尝试恢复控制终端
-- `-t <PID>`：指定要冻结的目标进程 PID
+| 参数 | 说明 |
+|------|------|
+| `--security-opt seccomp=unconfined` | 放宽 seccomp 限制，允许 CRIU 所需的 ptrace 等系统调用 |
+| `docker checkpoint create` | 在宿主机端对容器执行 CRIU checkpoint |
+| `docker start --checkpoint` | 从 CRIU 快照恢复容器 |
+| `--leave-running` | checkpoint 后保持容器运行（默认会暂停容器） |
+| `--checkpoint-dir` | 指定快照存储目录（默认在 `/var/lib/docker/containers/<ID>/checkpoints/`） |
+
+## 注意事项
+
+1. **不支持 TTY**：以 `-it`（交互式终端）启动的容器无法执行 checkpoint，必须使用 `-d` 后台模式。
+2. **TCP 连接**：默认情况下，有已建立 TCP 连接的容器做 checkpoint 时连接会断开。如需保留 TCP 连接状态，需在宿主机配置 `/etc/criu/runc.conf` 并添加 `tcp-established`。
+3. **内核版本**：建议 Linux 内核 4.3+（seccomp 挂起支持），5.10+ 更佳。
+4. **GPU / 外设**：使用了 GPU 或特定硬件的容器通常无法被 CRIU 快照。
+5. **快照存储**：默认存储在 Docker 的内部目录中，容器删除后快照也会丢失。如需持久化，请使用 `--checkpoint-dir` 指定外部目录。
