@@ -57,21 +57,23 @@ check_prerequisites() {
 
 # ---- 清理旧容器 ----
 cleanup() {
+SUDO_PODMAN="sudo podman"
+
     info "清理旧容器和检查点..."
-    podman rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    ${SUDO_PODMAN} rm -f "${CONTAINER_NAME}" 2>/dev/null || true
 }
 
 # ---- 步骤1: 构建镜像 ----
 build_image() {
     info "步骤1: 构建 Podman 镜像..."
-    podman build -t "${IMAGE_NAME}" .
+    ${SUDO_PODMAN} build -t "${IMAGE_NAME}" .
     ok "镜像构建完成: ${IMAGE_NAME}"
 }
 
 # ---- 步骤2: 启动容器 ----
 start_container() {
     info "步骤2: 启动容器..."
-    podman run -d \
+    ${SUDO_PODMAN} run -d \
         --name "${CONTAINER_NAME}" \
         --security-opt seccomp=unconfined \
         "${IMAGE_NAME}"
@@ -80,7 +82,7 @@ start_container() {
     local timeout=60
     local elapsed=0
     while [ $elapsed -lt $timeout ]; do
-        if podman logs "${CONTAINER_NAME}" 2>&1 | grep -q "\[READY\]"; then
+        if ${SUDO_PODMAN} logs "${CONTAINER_NAME}" 2>&1 | grep -q "\[READY\]"; then
             ok "模型加载完成，进程进入等待状态"
             return 0
         fi
@@ -95,7 +97,7 @@ measure_cold_start() {
     info "步骤3: 记录冷启动信息..."
 
     local timing_json
-    timing_json=$(podman exec "${CONTAINER_NAME}" cat /app/results/timing.json 2>/dev/null || echo "{}")
+    timing_json=$(${SUDO_PODMAN} exec "${CONTAINER_NAME}" cat /app/results/timing.json 2>/dev/null || echo "{}")
     echo "${timing_json}" | python3 -c "
 import sys, json
 try:
@@ -120,7 +122,7 @@ create_checkpoint() {
     cp_start=$(date +%s%N)
 
     # Podman checkpoint: 容器自动停止，checkpoint 保存在容器存储中
-    podman container checkpoint "${CONTAINER_NAME}"
+    ${SUDO_PODMAN} container checkpoint "${CONTAINER_NAME}"
 
     local cp_end
     cp_end=$(date +%s%N)
@@ -137,7 +139,7 @@ restore_container() {
     restore_start=$(date +%s%N)
 
     # Podman restore: 从 checkpoint 恢复已停止的容器
-    podman container restore "${CONTAINER_NAME}"
+    ${SUDO_PODMAN} container restore "${CONTAINER_NAME}"
 
     local restore_end
     restore_end=$(date +%s%N)
@@ -152,12 +154,12 @@ verify_inference() {
 
     sleep 2
 
-    podman exec "${CONTAINER_NAME}" touch /app/trigger_inference
+    ${SUDO_PODMAN} exec "${CONTAINER_NAME}" touch /app/trigger_inference
 
     local timeout=30
     local elapsed=0
     while [ $elapsed -lt $timeout ]; do
-        if podman exec "${CONTAINER_NAME}" test -f /app/results/verification.json 2>/dev/null; then
+        if ${SUDO_PODMAN} exec "${CONTAINER_NAME}" test -f /app/results/verification.json 2>/dev/null; then
             break
         fi
         sleep 1
@@ -169,7 +171,7 @@ verify_inference() {
     fi
 
     info "推理验证结果:"
-    podman exec "${CONTAINER_NAME}" cat /app/results/verification.json | python3 -c "
+    ${SUDO_PODMAN} exec "${CONTAINER_NAME}" cat /app/results/verification.json | python3 -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.read())
@@ -192,7 +194,7 @@ report() {
     info "步骤7: 生成性能报告..."
 
     local timing_json
-    timing_json=$(podman exec "${CONTAINER_NAME}" cat /app/results/timing.json 2>/dev/null || echo "{}")
+    timing_json=$(${SUDO_PODMAN} exec "${CONTAINER_NAME}" cat /app/results/timing.json 2>/dev/null || echo "{}")
     local cold_start_s
     cold_start_s=$(echo "${timing_json}" | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('total_init_s', 'N/A'))" 2>/dev/null || echo "N/A")
 
@@ -210,7 +212,7 @@ report() {
     echo "    import torch + model.load() + 基线推理:  ${cold_start_s}s"
     echo ""
     echo "  快照恢复 (有 CRIU):"
-    echo "    CRIU checkpoint 创建耗时:               $((CHECKPOINT_TIME_MS:-0))ms"
+    echo "    CRIU checkpoint 创建耗时:               ${CHECKPOINT_TIME_MS:-0}ms"
     echo "    CRIU restore 耗时:                       ${restore_s}s"
     echo ""
     if [ "${cold_start_s}" != "N/A" ] && [ "${restore_s}" != "N/A" ]; then
@@ -219,12 +221,12 @@ report() {
         echo "  加速比: ${speedup}"
     fi
     echo ""
-    echo "  验证状态: $(podman exec "${CONTAINER_NAME}" cat /app/results/verification.json 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print('通过' if d.get('match') else '失败')" 2>/dev/null || echo '未完成')"
+    echo "  验证状态: $(${SUDO_PODMAN} exec "${CONTAINER_NAME}" cat /app/results/verification.json 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print('通过' if d.get('match') else '失败')" 2>/dev/null || echo '未完成')"
     echo "============================================================"
     echo ""
 
     info "容器日志 (最后20行):"
-    podman logs --tail 20 "${CONTAINER_NAME}"
+    ${SUDO_PODMAN} logs --tail 20 "${CONTAINER_NAME}"
 }
 
 # ---- 主流程 ----
