@@ -18,6 +18,7 @@ IMAGE_NAME="pytorch-criu-cpu"
 CONTAINER_NAME="pytorch_criu_demo"
 CHECKPOINT_NAME="cp1"
 CHECKPOINT_DIR="/tmp/criu-pytorch-checkpoints"
+RESULT_DIR="/tmp/criu-pytorch-results"
 
 # ---- 颜色输出 ----
 RED='\033[0;31m'
@@ -123,6 +124,26 @@ create_checkpoint() {
     local cp_ms=$(( (cp_end - cp_start) / 1000000 ))
     ok "Checkpoint 创建完成，耗时: ${cp_ms}ms"
     CHECKPOINT_TIME_MS=${cp_ms}
+
+    # ---- 检查点分解分析 (Docker) ----
+    echo "" && echo "[CHECKPOINT] 执行检查点分解分析..."
+
+    # 获取容器 ID 以定位 checkpoint 目录
+    CONTAINER_ID=$(docker ps -aqf "name=${CONTAINER_NAME}")
+    DOCKER_CHECKPOINT_PATH="/var/lib/docker/containers/${CONTAINER_ID}/checkpoints/${CHECKPOINT_NAME}"
+
+    mkdir -p "${RESULT_DIR}"
+    if [ -d "$DOCKER_CHECKPOINT_PATH" ]; then
+        ANALYZE_SCRIPT="$(dirname "$0")/../analyze_checkpoint.sh"
+        if [ -x "$ANALYZE_SCRIPT" ]; then
+            "$ANALYZE_SCRIPT" "$DOCKER_CHECKPOINT_PATH" "${RESULT_DIR}/checkpoint_breakdown_docker.json" "docker"
+            echo "[CHECKPOINT] Docker 分解分析完成, 结果: ${RESULT_DIR}/checkpoint_breakdown_docker.json"
+        else
+            echo "[WARN] analyze_checkpoint.sh 未找到, 跳过分解分析"
+        fi
+    else
+        echo "[WARN] Docker checkpoint 目录未找到: $DOCKER_CHECKPOINT_PATH"
+    fi
 }
 
 # ---- 步骤5: 停止容器并从 checkpoint 恢复 ----

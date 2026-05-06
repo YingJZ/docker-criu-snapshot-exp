@@ -117,6 +117,9 @@ docker build -t pytorch-criu-cpu .
 ./run_experiment.sh
 ```
 
+输出额外包含：
+- `/tmp/criu-pytorch-results/checkpoint_breakdown_docker.json` — Docker 检查点分解分析
+
 ⚠️ **Docker 29 netns bug**：当前版本需要 `--network=host`，否则 checkpoint 后 restore 可能失败。
 
 ### 跑 Podman CRIU (pytorch-cpu-podman-criu/)
@@ -135,6 +138,9 @@ podman build -t pytorch-criu-cpu-podman .
 ```
 
 Podman 无需开启实验特性，原生支持 checkpoint/restore。
+
+输出额外包含：
+- `/tmp/criu-pytorch-results/checkpoint_breakdown_podman.json` — Podman 检查点分解分析
 
 ## 结果解读
 
@@ -230,6 +236,16 @@ Podman 无需开启实验特性，原生支持 checkpoint/restore。
 - `net` / `cgroup` 占比大 → 容器环境额外开销（裸机实验通常为 0）
 
 ## 检查点分解分析
+
+### 三种运行环境的分解输出
+
+| 运行环境 | 输出文件 | 生成方式 |
+|----------|----------|----------|
+| 裸机 | `/tmp/criu-pytorch-results/checkpoint_breakdown.json` | `bench_compare.sh` 自动调用 `analyze_checkpoint.sh` |
+| Docker | `/tmp/criu-pytorch-results/checkpoint_breakdown_docker.json` | `run_experiment.sh` 自动调用 `analyze_checkpoint.sh` |
+| Podman | `/tmp/criu-pytorch-results/checkpoint_breakdown_podman.json` | `run_experiment.sh` 自动调用 `analyze_checkpoint.sh` |
+
+三种输出的 JSON 结构完全一致（见下方 `checkpoint_breakdown.json 结构`），仅 `label` 字段不同（`bare-metal` / `docker` / `podman`），可直接对比各运行环境下的检查点体积和组成差异。
 
 ### analyze_checkpoint.sh 工作原理
 

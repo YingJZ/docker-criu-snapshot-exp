@@ -17,6 +17,7 @@ set -euo pipefail
 IMAGE_NAME="pytorch-criu-cpu-podman"
 CONTAINER_NAME="pytorch_criu_podman_demo"
 CHECKPOINT_NAME="cp1"
+RESULT_DIR="/tmp/criu-pytorch-results"
 
 # ---- 颜色输出 ----
 RED='\033[0;31m'
@@ -121,14 +122,37 @@ create_checkpoint() {
     local cp_start
     cp_start=$(date +%s%N)
 
-    # Podman checkpoint: 容器自动停止，checkpoint 保存在容器存储中
-    ${SUDO_PODMAN} container checkpoint "${CONTAINER_NAME}"
+    # Podman checkpoint: 容器自动停止，checkpoint 导出用于分解分析
+    ${SUDO_PODMAN} container checkpoint "${CONTAINER_NAME}" --export /tmp/podman-checkpoint.tar.gz
 
     local cp_end
     cp_end=$(date +%s%N)
     local cp_ms=$(( (cp_end - cp_start) / 1000000 ))
     ok "Checkpoint 创建完成，耗时: ${cp_ms}ms"
     CHECKPOINT_TIME_MS=${cp_ms}
+
+    # ---- 检查点分解分析 (Podman) ----
+    echo "" && echo "[CHECKPOINT] 执行检查点分解分析..."
+
+    ANALYZE_SCRIPT="$(dirname "$0")/../analyze_checkpoint.sh"
+    PODMAN_CKPT_DIR="/tmp/podman-checkpoint-extracted"
+    mkdir -p "$PODMAN_CKPT_DIR"
+    mkdir -p "${RESULT_DIR}"
+
+    if [ -f /tmp/podman-checkpoint.tar.gz ]; then
+        tar -xzf /tmp/podman-checkpoint.tar.gz -C "$PODMAN_CKPT_DIR" 2>/dev/null
+
+        if [ -x "$ANALYZE_SCRIPT" ]; then
+            "$ANALYZE_SCRIPT" "$PODMAN_CKPT_DIR" "${RESULT_DIR}/checkpoint_breakdown_podman.json" "podman"
+            echo "[CHECKPOINT] Podman 分解分析完成, 结果: ${RESULT_DIR}/checkpoint_breakdown_podman.json"
+        else
+            echo "[WARN] analyze_checkpoint.sh 未找到, 跳过分解分析"
+        fi
+
+        rm -rf "$PODMAN_CKPT_DIR"
+    else
+        echo "[WARN] Podman checkpoint 导出文件未找到"
+    fi
 }
 
 # ---- 步骤5: 从 checkpoint 恢复容器 ----
