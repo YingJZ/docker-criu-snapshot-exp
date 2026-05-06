@@ -68,6 +68,7 @@ start_container() {
     docker run -d \
         --name "${CONTAINER_NAME}" \
         --security-opt seccomp=unconfined \
+        --network=host \
         "${IMAGE_NAME}"
 
     # 等待模型加载完成

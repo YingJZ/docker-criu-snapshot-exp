@@ -184,7 +184,7 @@ with open("$tmp_categories", "r") as f:
         # 已经在上面累加了，这里不做重复
 
 # crit inventory
-crit_available = $crit_available
+crit_available = True if "$crit_available" == "true" else False
 crit_inv_raw = """$(echo "$crit_inventory")"""
 try:
     crit_inv = json.loads(crit_inv_raw)
