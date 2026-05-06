@@ -1,0 +1,103 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778058733758,
+  "projectRoot": "/Users/yingjz/Desktop/2026春本科毕业设计公文包（计算机学院）2025-12-31/毕业论文/docker-criu-snapshot-exp",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "oh-my-claudecode": {
+      "path": "oh-my-claudecode",
+      "purpose": null,
+      "fileCount": 29,
+      "lastAccessed": 1778058733591,
+      "keyFiles": [
+        "AGENTS.md",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "LICENSE"
+      ]
+    },
+    "pytorch-cpu-criu": {
+      "path": "pytorch-cpu-criu",
+      "purpose": null,
+      "fileCount": 11,
+      "lastAccessed": 1778058733594,
+      "keyFiles": [
+        "CRIU耗时长的原因分析.md",
+        "Dockerfile",
+        "EXPERIMENT_RESULT.md",
+        "README.md",
+        "bare_inference.py"
+      ]
+    },
+    "pytorch-cpu-podman-criu": {
+      "path": "pytorch-cpu-podman-criu",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1778058733654,
+      "keyFiles": [
+        "Dockerfile",
+        "EXPERIMENT_REPORT.md",
+        "README.md",
+        "bare_inference.py",
+        "bench_compare.sh"
+      ]
+    },
+    "test-docker-criu": {
+      "path": "test-docker-criu",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1778058733669,
+      "keyFiles": [
+        "Dockerfile",
+        "EXPERIMENT_RESULT.md",
+        "README.md",
+        "test_app.py"
+      ]
+    },
+    "pytorch-cpu-criu/models": {
+      "path": "pytorch-cpu-criu/models",
+      "purpose": "Data models",
+      "fileCount": 1,
+      "lastAccessed": 1778058733671,
+      "keyFiles": []
+    },
+    "pytorch-cpu-podman-criu/models": {
+      "path": "pytorch-cpu-podman-criu/models",
+      "purpose": "Data models",
+      "fileCount": 1,
+      "lastAccessed": 1778058733677,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

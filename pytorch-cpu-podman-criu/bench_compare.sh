@@ -86,6 +86,16 @@ mkdir -p "$CHECKPOINT_DIR"
 sudo criu dump -vvv -o "$CHECKPOINT_DIR/dump.log" -t "$CRUI_PID" --shell-job -D "$CHECKPOINT_DIR"
 echo "[CRIU] Checkpoint 完成, 大小: $(du -sh "$CHECKPOINT_DIR" | cut -f1)"
 
+# ---- 检查点分解分析 ----
+echo "[CRIU] 执行检查点分解分析..."
+ANALYZE_SCRIPT="$SCRIPT_DIR/../analyze_checkpoint.sh"
+if [ -x "$ANALYZE_SCRIPT" ]; then
+    "$ANALYZE_SCRIPT" "$CHECKPOINT_DIR" "$RESULT_DIR/checkpoint_breakdown.json" "podman"
+    echo "[CRIU] 分解分析完成, 结果: $RESULT_DIR/checkpoint_breakdown.json"
+else
+    echo "[WARN] analyze_checkpoint.sh 未找到, 跳过分解分析"
+fi
+
 restore_times=()
 restore_to_infer_times=()
 
@@ -184,6 +194,20 @@ for i in $(seq 1 $ROUNDS); do
     echo "  Round $i: restore=${restore_times[$idx]}s, infer=${restore_to_infer_times[$idx]}s"
 done
 
+# 构建 checkpoint_breakdown 字段（如果存在分解分析结果）
+CHECKPOINT_BREAKDOWN="null"
+if [ -f "$RESULT_DIR/checkpoint_breakdown.json" ]; then
+    CHECKPOINT_BREAKDOWN=$(python3 -c "
+import json, sys
+try:
+    with open('$RESULT_DIR/checkpoint_breakdown.json') as f:
+        data = json.load(f)
+    print(json.dumps(data))
+except:
+    print('null')
+")
+fi
+
 cat > "$RESULT_DIR/comparison_summary.json" << EOF
 {
   "rounds": $ROUNDS,
@@ -202,7 +226,8 @@ cat > "$RESULT_DIR/comparison_summary.json" << EOF
     "per_round_restore": [$(IFS=,; echo "${restore_times[*]}")],
     "per_round_infer": [$(IFS=,; echo "${restore_to_infer_times[*]}")]
   },
-  "speedup": "$speedup"
+  "speedup": "$speedup",
+  "checkpoint_breakdown": $CHECKPOINT_BREAKDOWN
 }
 EOF
 
